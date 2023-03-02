@@ -1,16 +1,28 @@
 # Cypress Best Practices
 
-This is a best practices guide for writing integration tests at Affirm. It extends on the recommendations set [here](https://docs.cypress.io/guides/references/best-practices/) in the Cypress official best practice documentation. 
+This is a best practices guide for writing integration tests with Cypress at Affirm. It draws from the recommendations set [here](https://docs.cypress.io/guides/references/best-practices/) in the Cypress official best practice documentation and include some Affirm-specific examples. 
 
 ## Cypress Commands 
 
-Queries, actions, & assertions // todo add brief explanation of each
-
-The cy.get() query starts searching the DOM root node as the scope for finding elements (In most cases, it is the document element, unless used inside the .within() command.)
-The cy.find() query starts its search from the current scope selected 
+Queries, actions, & assertions 
 
 In general, the structure of your test should flow query -> query -> command or assertion(s). **It's best practice not to chain anything after an action command.**
 
+### Anti Pattern: Incorrectly chaining commands
+```js
+cy.get('.new-todo')
+  .type('todo A{enter}') // action
+  .type('todo B{enter}') // action after another action - bad
+  .should('have.class', 'active') // assertion after an action - bad
+```
+To avoid these issues entirely, it is better to split up the above chain of commands.
+
+### Best Practice: Correctly ending chains after an action
+```js
+cy.get('.new-todo').type('todo A{enter}')
+cy.get('.new-todo').type('todo B{enter}')
+cy.get('.new-todo').should('have.class', 'active')
+```
 
 ## Timeouts
 
