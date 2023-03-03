@@ -112,8 +112,14 @@ Then you can proceed with selecting the option you want.
 
 
 ### Anti Pattern: Using FindByText 
-
 If the copy for your feature changes, which is likely to happen, your tests will fail. 
+### Anti Pattern: Using uninterpretable things like `div > div > div` 
+```js
+this.selectors = {
+  LOAN_TERMS_LINK: '.loan-event__terms-link > div > a',
+
+};
+```
 
 ### Best practice: Use a data-test selector whenever possible. 
 
