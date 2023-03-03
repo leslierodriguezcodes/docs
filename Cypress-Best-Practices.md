@@ -2,9 +2,21 @@
 
 This is a best practices guide for writing integration tests with Cypress at Affirm. It draws from the recommendations set [here](https://docs.cypress.io/guides/references/best-practices/) in the Cypress official best practice documentation and include some Affirm-specific examples. 
 
+## File structure and naming conventions
+
+### Anti patterns for test organizations and naming convention
+- Naming folders after team names is not idea since those team names are garaunteed to stay the same. 
+
+Example: https://github.com/Affirm/web-ux/tree/develop/integration-tests-v2/cypress/specs/user-portal/us affirm-anywhere-adoption is no longer a team name.
+
+### Best Practice 
+- Name folders after artifacts (ex: https://github.com/Affirm/web-ux/tree/develop/integration-tests-v2/cypress/specs/user-portal/us/settings)
+
+This makes it easier to determine ownership of artifacts and directories no matter what team changes may happen to the team that owns it now.  
+
 ## Cypress Commands 
 
-Queries, actions, & assertions 
+Cypress commands can be queries, actions, or assertions.
 
 In general, the structure of your test should flow query -> query -> command or assertion(s). **It's best practice not to chain anything after an action command.**
 
@@ -33,24 +45,16 @@ Lets look at the following test. The tests sets some server configurations for a
 
 ```js
 describe('Shop search', () => {
-  const queryString = 'casper';
   beforeEach(() => {
-    cy.intercept('GET', shopEndpoints.searchV2(queryString), {  // stub out search results
-      fixture: 'shop/search-results',
-    }).as('searchResults');
+  // stub out search results endpoint
   })
+
   describe('Affirm Anywhere merchant', () => {
     describe('Not prequalified user', () => {
       it('opens merchant detail page and shows Prequal VCN Flow Modal without prequal amount', () => {
-        cy.setServerConfig({  // Sets up experiment configuratons
-          MERCHANT_DETAIL_PAGE_TYPE: 'vcn',
-          SHOP_HAS_PREQUAL: 'false',
-          GET_GUARANTEE_SCENARIO: '200-no-previous-guarantee',
-          POST_GUARANTEE_SCENARIO: '200-needs-more-information-income',
-        }); 
-        cy.intercept('GET', '/api/marketplace/merchants/v2/casper1/details', {  // stub out merchant details
-          fixture: 'shop/casper1-details-vcn-no-prequal',
-        }).as('casperDetails');
+        // Sets up experiment configuratons
+        // stub out merchant details endpoint
+
         cy.visit('/u/shop');
         cy.findByTestId('shop-search-input').type(queryString);
 
@@ -61,20 +65,6 @@ describe('Shop search', () => {
               return cy.wrap(firstSearchResult);
             })
             .click();
-
-          cy.wait(['@casperDetails']).then(() => {
-            cy.findByRole('dialog')
-              .findByTestId('merchant-detail-page-main-button')
-              .click();
-
-            cy.findByTestId('prequal-vcn-flow-modal').should('be.visible');
-            cy.findByTestId('prequal-vcn-flow-modal').within(() => {
-              cy.findByTestId('guarantees-onboarding-modal-continue').click();
-              cy.findByTestId('guarantees-income-challenge-modal-input').should(
-                'be.visible',
-              );
-            });
-          });
         });
       });
     })
@@ -90,7 +80,7 @@ We don't really want to give our test 30 seconds to find the listbox element. We
 
 ### Best Practice: Use Cypress assertions to wait for something to be true
 
-What we want this test to accomplish is: search something, wait for the results to populate the dropdown, select the first search result, then do more stuff with that result. Lets see how we can accomplish this.
+Lets see how we can accomplish waiting for the search results to populate the drowpdown without increasing the timeout.
 
 ```js
 cy.wait(['@searchResults']).then(() => { // wait up to the default 35 seconds to get results and then continue with our test
@@ -117,7 +107,6 @@ If the copy for your feature changes, which is likely to happen, your tests will
 ```js
 this.selectors = {
   LOAN_TERMS_LINK: '.loan-event__terms-link > div > a',
-
 };
 ```
 
