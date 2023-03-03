@@ -102,7 +102,11 @@ Then you can proceed with selecting the option you want.
 
 
 ### Anti Pattern: Using FindByText 
-If the copy for your feature changes, which is likely to happen, your tests will fail. 
+If the copy changes, should the test fail? If not, don't use findbytext.
+```js
+cy.findByText('Pay with a one time use virtual card').click();
+```
+
 ### Anti Pattern: Using uninterpretable things like `div > div > div` 
 ```js
 this.selectors = {
@@ -110,7 +114,7 @@ this.selectors = {
 };
 ```
 
-### Best practice: Use a data-test selector whenever possible. 
+### Best practice: Use a data-testid selector when possible
 
 Sometimes you won’t be able to put a data attribute on your element because you are using the components core library. When compiled the data attributes may change, just like the classnames. You may run into the situation where you cannot directly place a data attribute on the element you want to select.  
 For example, let’s say you are writing a test for an input that is using the [AmountInput](https://storybook.affirm-dev.com/components-core/6.9.0/?path=/docs/components-forms-generic-numbers-amountinput--amount-input) reusable component. 
