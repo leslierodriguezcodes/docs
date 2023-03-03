@@ -29,35 +29,84 @@ cy.get('.new-todo').should('have.class', 'active')
 
 ### Anti Pattern: Using arbitrary custom timeouts
 
+Lets look at the following test. The tests sets some server configurations for axp, and stubbs out a response for a merchant details endpoint. The test then waits for the response and in the then block we have an increase timeout for querying a list of results. 
 
-todo: find examples in repo
+```js
+describe('Shop search', () => {
+  const queryString = 'casper';
+  beforeEach(() => {
+    cy.intercept('GET', shopEndpoints.searchV2(queryString), {  // stub out search results
+      fixture: 'shop/search-results',
+    }).as('searchResults');
+  })
+  describe('Affirm Anywhere merchant', () => {
+    describe('Not prequalified user', () => {
+      it('opens merchant detail page and shows Prequal VCN Flow Modal without prequal amount', () => {
+        cy.setServerConfig({  // Sets up experiment configuratons
+          MERCHANT_DETAIL_PAGE_TYPE: 'vcn',
+          SHOP_HAS_PREQUAL: 'false',
+          GET_GUARANTEE_SCENARIO: '200-no-previous-guarantee',
+          POST_GUARANTEE_SCENARIO: '200-needs-more-information-income',
+        }); 
+        cy.intercept('GET', '/api/marketplace/merchants/v2/casper1/details', {  // stub out merchant details
+          fixture: 'shop/casper1-details-vcn-no-prequal',
+        }).as('casperDetails');
+        cy.visit('/u/shop');
+        cy.findByTestId('shop-search-input').type(queryString);
 
-These examples are using `wait()` and `{ timeout: 7000 }` incorrectly. 
+        cy.wait(['@searchResults']).then(() => { // cy.wait() actually uses 2 different timeouts. When waiting for a routing alias, we wait for a matching request for 5000ms, and then additionally for the server's response for 30000ms
+          cy.findByRole('listbox', { timeout: 30000 }) // query for the element with a role of `listbox` and wait ✨up to 30 seconds for it to exist in the DOM✨
+            .then(($listbox) => {  // if the listbox is found before 30 seconds is up, we go into this block
+              const firstSearchResult = $listbox.children().first();
+              return cy.wrap(firstSearchResult);
+            })
+            .click();
 
+          cy.wait(['@casperDetails']).then(() => {
+            cy.findByRole('dialog')
+              .findByTestId('merchant-detail-page-main-button')
+              .click();
 
-The listbox element (dropdown) renders before the options inside of it do. The tests above are written so that it would pick the first option of the table as soon as the dropdown is rendered before all options even exist.
+            cy.findByTestId('prequal-vcn-flow-modal').should('be.visible');
+            cy.findByTestId('prequal-vcn-flow-modal').within(() => {
+              cy.findByTestId('guarantees-onboarding-modal-continue').click();
+              cy.findByTestId('guarantees-income-challenge-modal-input').should(
+                'be.visible',
+              );
+            });
+          });
+        });
+      });
+    })
+  })
+});
+```
+We should keep in mind that future developers looking at this test code won't know how the `30000` was derived, increasing the timeout is only a band-aid that will lead to test flakiness, and it increases the overall runtime of integration tests in both CI and the pipeline.
 
-todo: add example from repo
+The above custom timeout was also added inside a `.then` block, which will only happen after the `.wait` resolves. According to cypress docs, 
+> cy.wait() actually uses 2 different timeouts. When waiting for a routing alias, we wait for a matching request for 5000ms, and then additionally for the server's response for 30000ms. That means above code will wait for ✨up to 35 seconds for the servers response✨, before the timeout will cause the test to fail. 
 
+We don't really want to give our test 30 seconds to find the listbox element. We know at this point in our code, we already have the data we need so populating it the UI should not take 30 seconds. 
 
 ### Best Practice: Use Cypress assertions to wait for something to be true
 
-You can solve this by instead doing the following which retries until the assertion is true. So it will pass once the options are all present. 
+What we want this test to accomplish is: search something, wait for the results to populate the dropdown, select the first search result, then do more stuff with that result. Lets see how we can accomplish this.
 
+```js
+cy.wait(['@searchResults']).then(() => { // wait up to the default 35 seconds to get results and then continue with our test
+    cy.get('#search-results') // Now wait up to the default timeout for the dropdown to exist
+      .find('[role="option"]') // AND contain options inside of it 
+      .should('have.length', 4) // AND for those options to the expected length of the our stubbed response
+      .then(($listbox) => {
+        const firstSearchResult = $listbox.children().first();
+        return cy.wrap(firstSearchResult);
+      })
+      .click();
+})
 ```
-cy.get('[role="option"]').should('have.length', 2);
-```
+When we add the `.should()` then cypress will query for the or the element with a role of option and wait **✨up to 4 seconds for it to exist in the DOM✨** **✨and for it to be populated with 4 options**. 
 
-cy.get() has a default timeout of 4 seconds. If we were to just use .get here, `cy.get('[role="option"]')`, Cypress will query for the element with a role of option and wait **✨up to 4 seconds for it to exist in the DOM✨**.
-When we add the .should(), then cypress will query for the or the element with a role of option and wait **✨up to 4 seconds for it to exist in the DOM✨** **✨and for it to be populated with two options**. 
-
- 
-
-Then you can proceed with selecting the option you want.
-
-Cypress commands have default timeouts that can be changed in cypress.config.js. The timeout determins how long Cypress will wait for the element to exist in the DOM. For more info please see: https://docs.cypress.io/guides/core-concepts/retry-ability 
-
-todo: add example from repo
+Then you can proceed with selecting the option you want. 
 
 ## Selectors
 
@@ -66,23 +115,13 @@ todo: add example from repo
 
 If the copy for your feature changes, which is likely to happen, your tests will fail. 
 
-// todo find example of this in our repo
-
 ### Best practice: Use a data-test selector whenever possible. 
 
-Sometimes you won’t be able to put a data attribute on your element because you are using the components core library. When compiled the data attributes will change, just like the classnames. You may run into the situation where you cannot directly place a data attribute on the element you want to select.  
-For example, let’s say you are writing a test for an input that is really the [AmountInput](https://storybook.affirm-dev.com/components-core/6.9.0/?path=/docs/components-forms-generic-numbers-amountinput--amount-input) reusable component. 
-If you were to place a data attribute on this component, the library might compile this attribute to something foreign at build time. This is intentional because libraries don’t want to clash with app classNames or attributes. 
+Sometimes you won’t be able to put a data attribute on your element because you are using the components core library. When compiled the data attributes may change, just like the classnames. You may run into the situation where you cannot directly place a data attribute on the element you want to select.  
+For example, let’s say you are writing a test for an input that is using the [AmountInput](https://storybook.affirm-dev.com/components-core/6.9.0/?path=/docs/components-forms-generic-numbers-amountinput--amount-input) reusable component. 
+If you were to place a data attribute on this component, the library might compile this attribute to something foreign at build time. 
 
 In this case you can try placing a data attribute on the parent element containing this component. 
-
-// todo find example of this in our repo
-
-
-### Understanding The Differences in selectors
-
-* getBy will throw errors if it can't find the element
-* findBy will return and reject a Promise if it doesn't find an element
 
 
 ## Conditional Testing
@@ -125,10 +164,8 @@ Example 1:
   };
 ```
   
-Why does this work? 
 The condional here is not based on the existence of a dom element, it is based on the stubbed out server resonse for eligible_instruments endpoint.
-The .wait() has a default timeout
-Addionally, everything inside of the .then block will run *after* the .then executes. If we were to place an if statement outside the .then block, it would rub *before* the .then executes. 
+
 
 Example 2:
 ```js
@@ -138,12 +175,7 @@ Example 2:
   }
 ```
 
-Why does this work? 
-
-Cypress.browser returns properties of the browser. 
-
-
-
+While .cy is async, Cypress.browser is not. This method returns the browser object with properties like `name`. This is safe to do. 
 
 See:
 
